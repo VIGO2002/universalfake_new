@@ -108,61 +108,29 @@ class Trainer(BaseModel):
             else:
                 self.logits = self.output
     
-def get_loss(self):
+    def get_loss(self):
         loss_cls = self.loss_fn(self.logits, self.label)
         
-        # 1. 基础分类损失
-        total_loss = loss_cls
+        if self.e_real is None:
+            return loss_cls
 
-        # 2. 能量损失 (如果有)
-        if self.e_real is not None:
-            fake_mask = (self.label == 1)
-            real_mask = (self.label == 0)
-            
-            loss_energy = 0.0
-            # Symmetric Margin Loss
-            if real_mask.sum() > 0:
-                loss_energy += F.relu(self.e_real[real_mask] - self.e_fake[real_mask] + self.margin).mean()
-            if fake_mask.sum() > 0:
-                loss_energy += F.relu(self.e_fake[fake_mask] - self.e_real[fake_mask] + self.margin).mean()
+        fake_mask = (self.label == 1)
+        real_mask = (self.label == 0)
+        
+        loss_energy = 0.0
+        # Symmetric Margin Loss
+        if real_mask.sum() > 0:
+            loss_energy += F.relu(self.e_real[real_mask] - self.e_fake[real_mask] + self.margin).mean()
+        if fake_mask.sum() > 0:
+            loss_energy += F.relu(self.e_fake[fake_mask] - self.e_real[fake_mask] + self.margin).mean()
 
-            # Smoothness Loss
-            loss_smooth = 0.0
-            if hasattr(self, 'e_real_noisy') and self.e_real_noisy is not None:
-                loss_smooth = F.mse_loss(self.e_real, self.e_real_noisy) + \
-                              F.mse_loss(self.e_fake, self.e_fake_noisy)
-            
-            # 累加能量损失
-            total_loss += self.lambda_ebm * loss_energy + self.lambda_smooth * loss_smooth
-
-        # 3. 【新增】SVD 正则化损失 (Crucial for SVD Fine-tuning)
-        # 只在训练时计算，且只针对包含 SVD 参数的模型
-        if self.model.training:
-            loss_svd = 0.0
-            num_reg = 0
-            # 遍历所有子模块寻找 SVD 参数
-            for module in self.model.modules():
-                if hasattr(module, 'S_residual') and module.S_residual is not None:
-                    U = module.U_residual
-                    V = module.V_residual
-                    S = module.S_residual
-                    
-                    # (A) 正交性约束: U^T U ≈ I
-                    # 我们希望 U 和 V 保持正交，这样 S 才能代表奇异值
-                    if U is not None and V is not None:
-                        # 简单的正交惩罚
-                        u_orth = torch.norm(U.T @ U - torch.eye(U.shape[1], device=U.device), p='fro')
-                        v_orth = torch.norm(V.T @ V - torch.eye(V.shape[1], device=V.device), p='fro')
-                        loss_svd += (u_orth + v_orth)
-                        num_reg += 1
-            
-            # 如果找到了 SVD 层，加上这个损失
-            if num_reg > 0:
-                # 权重通常设为 0.1 或 0.5，这里给一个合理的默认值
-                # 这有助于防止 SVD 参数漂移过远
-                total_loss += 0.1 * (loss_svd / num_reg)
-
-        return total_loss
+        # Smoothness Loss
+        loss_smooth = 0.0
+        if hasattr(self, 'e_real_noisy') and self.e_real_noisy is not None:
+            loss_smooth = F.mse_loss(self.e_real, self.e_real_noisy) + \
+                          F.mse_loss(self.e_fake, self.e_fake_noisy)
+        
+        return loss_cls + self.lambda_ebm * loss_energy + self.lambda_smooth * loss_smooth
 
     def optimize_parameters(self):
         self.model.train() 
