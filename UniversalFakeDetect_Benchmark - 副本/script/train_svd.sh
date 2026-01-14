@@ -18,5 +18,5 @@ python train.py \
   --noise_std 0.02 \
   --data_aug \
   --continue_train \
-  --epoch_count 2 \
-  --lr 0.00001
+  --epoch_count 0 \
+  --lr 0.0002
